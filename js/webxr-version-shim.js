@@ -22,6 +22,33 @@
 // implementations of the WebXR API and allow the samples to be coded exclusively
 // against the most recent version.
 
+class XRRayShim {
+  constructor(rayMatrix) {
+    this._transformMatrix = rayMatrix;
+
+    // TODO: Don't rely on these types for the shim.
+    // Some browsers don't support them yet.
+    let o = new DOMPointReadOnly(0, 0, 0, 1);
+    let d = new DOMPointReadOnly(0, 0, -1, 0);
+    let t = new DOMMatrix(rayMatrix);
+
+    this._origin = DOMPointReadOnly.fromPoint(t.transformPoint(o));
+    this._direction = DOMPointReadOnly.fromPoint(t.transformPoint(d));
+  }
+
+  get origin() {
+    return this._origin;
+  }
+
+  get direction() {
+    return this._direction;
+  }
+
+  get transformMatrix() {
+    return this._transformMatrix;
+  }
+}
+
 class WebXRVersionShim {
   constructor() {
     if (this._shouldApplyPatch()) {
@@ -106,6 +133,14 @@ class WebXRVersionShim {
       });
     };
 
+    // Make sure that requestAnimationFrame is always supplied with a timestamp
+    const NATIVE_REQUEST_ANIMATION_FRAME = XRSession.prototype.requestAnimationFrame;
+    XRSession.prototype.requestAnimationFrame = function(callback) {
+      return NATIVE_REQUEST_ANIMATION_FRAME.call(this, (timestamp, frame) => {
+        callback(timestamp ? timestamp : performance.now(), frame);
+      });
+    };
+
     if (!('getNativeFramebufferScaleFactor' in XRWebGLLayer)) {
       if (this._isMobile()) {
         const NATIVE_WEBGL_LAYER = XRWebGLLayer;
@@ -120,21 +155,23 @@ class WebXRVersionShim {
         };
 
         XRWebGLLayer.prototype = NATIVE_WEBGL_LAYER_PROTOTYPE;
-      }
 
-      // TODO: Figure out how to monkey-patch in a static function. The code below doesn't work.
-      /*XRWebGLLayer.getNativeFramebufferScaleFactor = function(session) {
-        if (!session) {
-          throw new TypeError('No XRSession specified');
-        }
-        if (isMobile()) {
-          // On Chrome 67/68 mobile the default framebuffer returned is 0.7 of full res.
-          return 1.42857;
-        } else {
-          // On Chrome 67/68 desktop the full res buffer is already returned.
-          return 1.0;
-        } 
-      };*/
+        Object.defineProperty(XRWebGLLayer, 'getNativeFramebufferScaleFactor', {
+          enumerable: true, configurable: false, writeable: false,
+          value: function(session) {
+            if (!session) {
+              throw new TypeError('No XRSession specified');
+            }
+            if (isMobile()) {
+              // On Chrome 67/68 mobile the default framebuffer returned is 0.7 of full res.
+              return 1.42857;
+            } else {
+              // On Chrome 67/68 desktop the full res buffer is already returned.
+              return 1.0;
+            }
+          }
+        });
+      }
     }
 
     // If the environmentBlendMode isn't available report it as 'opaque', since any
@@ -151,19 +188,29 @@ class WebXRVersionShim {
         enumerable: true, configurable: false, writeable: false,
         get: function() {
           switch (this.pointerOrigin) {
-            case 'head': return 'gazing';
-            case 'hand': return 'pointing';
-            case 'screen': return 'tapping';
+            case 'head': return 'gaze';
+            case 'hand': return 'tracked-pointer';
+            case 'screen': return 'screen';
+
             default: throw new ValueError('Unrecognized pointerOrigin: ' + this.pointerOrigin);
           }
         }
       });
     }
 
-    if (!('targetRayMatrix' in XRInputPose.prototype)) {
-      Object.defineProperty(XRInputPose.prototype, 'targetRayMatrix', {
+    if (!('targetRay' in XRInputPose.prototype)) {
+      Object.defineProperty(XRInputPose.prototype, 'targetRay', {
         enumerable: true, configurable: false, writeable: false,
-        get: function() { return this.pointerMatrix; }
+        get: function() {
+          if (!this._targetRay) {
+            if (this.targetRayMatrix) {
+              this._targetRay = new XRRayShim(this.targetRayMatrix);
+            } else if (this.pointerMatrix) {
+              this._targetRay = new XRRayShim(this.pointerMatrix);
+            }
+          }
+          return this._targetRay || null;
+        }
       });
     }
   }

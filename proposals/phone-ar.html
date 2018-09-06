@@ -26,8 +26,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     <meta name='mobile-web-app-capable' content='yes'>
     <meta name='apple-mobile-web-app-capable' content='yes'>
 
-    <!-- Origin Trial Token, feature = WebXR Device API, origin = https://immersive-web.github.io, expires = 2018-07-25 -->
-<meta http-equiv="origin-trial" data-feature="WebXR Device API" data-expires="2018-07-25" content="AiOtRLgiXauzJY1CytLCb96aWE1XryUKk1o4uTBQNRpMoeFAbO9e+wsRbT41diaTMC3M6NC6C+HgubQtPUU57wEAAABceyJvcmlnaW4iOiJodHRwczovL2ltbWVyc2l2ZS13ZWIuZ2l0aHViLmlvOjQ0MyIsImZlYXR1cmUiOiJXZWJYUkRldmljZSIsImV4cGlyeSI6MTUzMjU0MDY0Mn0=">
+    <!-- Origin Trial Token, feature = WebXR Device API, origin = https://immersive-web.github.io, expires = 2018-08-28 -->
+<meta http-equiv="origin-trial" data-feature="WebXR Device API" data-expires="2018-08-28" content="AnNpu7ceXvLew05ccD8Zr1OZsdZiB2hLQKK82kTTMDwF7oRKtP3QEJ4RzkeHrmB8Sq0vSV6ZNmszpBCZ0I8p9gAAAABceyJvcmlnaW4iOiJodHRwczovL2ltbWVyc2l2ZS13ZWIuZ2l0aHViLmlvOjQ0MyIsImZlYXR1cmUiOiJXZWJYUkRldmljZSIsImV4cGlyeSI6MTUzNTQxNDQwMH0=">
 
     <title>Phone AR</title>
 
@@ -74,6 +74,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       let xrButton = null;
       let xrFrameOfRef = null;
 
+      // AR sessions must have an outputContext, just like magic window
+      // sessions.
+      let outputCanvas = document.createElement('canvas');
+      outputCanvas.setAttribute('id', 'output-canvas');
+      let ctx = outputCanvas.getContext('xrpresent');
+
       // WebGL scene globals.
       let gl = null;
       let renderer = null;
@@ -100,29 +106,25 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
         if (navigator.xr) {
           navigator.xr.requestDevice().then((device) => {
-            // TODO: supportsSession call for AR.
-            //device.supportsSession({ar: true}).then(() => {
+            // Checks to ensure that environment integration (AR) is available,
+            // and only enables the button if so.
+            device.supportsSession({ environmentIntegration: true, outputContext: ctx }).then(() => {
               xrButton.setDevice(device);
-            //});
+            });
           });
         }
       }
 
       function onRequestSession(device) {
-        // AR sessions must have an outputContext, just like magic window
-        // sessions.
-        let outputCanvas = document.createElement('canvas');
-        outputCanvas.setAttribute('id', 'output-canvas');
-        let ctx = outputCanvas.getContext('xrpresent');
+        // Requests an inline (non-immersive) session with environment integration
+        // to get AR via video passthrough.
 
-        // Even though this is a non-exclusive session, the fact that it's
-        // using AR features means it must be requested in a user activation
-        // event so that appropriate permissions can be granted.
-
-        // TODO: The 'requestAR' option here does nothing yet. Eventually we
-        // will have an option like this, however, that is required to enable 
-        // AR functionality.
-        device.requestSession({ requestAR: true, outputContext: ctx })
+        // Even though this is a non-immersive session, the fact that it's
+        // using environment integration means it must be requested in a user
+        // activation event so that appropriate permissions can be granted.
+        // This will likely prompt the user to allow camera use, so the promise
+        // may remain outstanding for a while.
+        device.requestSession({ environmentIntegration: true, outputContext: ctx })
             .then((session) => {
               // Add the canvas to the document once we know that it will be
               // rendered to.
